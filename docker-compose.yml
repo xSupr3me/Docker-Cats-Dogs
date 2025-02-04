@@ -2,10 +2,7 @@ services:
   db:
     image: postgres:latest
     container_name: postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+    env_file: .env
     volumes:
       - db_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -21,7 +18,7 @@ services:
     networks:
       - app-net
     depends_on:
-      - worker
+      - db
 
   worker:
     build:
