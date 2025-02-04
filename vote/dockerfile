@@ -16,4 +16,4 @@ COPY . .
 EXPOSE 8080
 
 # Lancer l'application "vote" par défaut
-CMD ["python", "src/app.py"]
+CMD ["python", "app.py"]
