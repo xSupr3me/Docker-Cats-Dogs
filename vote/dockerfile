@@ -1,0 +1,19 @@
+FROM python:3.11-alpine
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier les dépendances
+COPY requirements.txt .
+
+# Installer les dépendances selon requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copier tout le contenu du dossier vote (y compris src, output, etc.) dans /app
+COPY . .
+
+# Exposer le port (si nécessaire, ex: 5000)
+EXPOSE 8080
+
+# Lancer l'application "vote" par défaut
+CMD ["python", "app.py"]
