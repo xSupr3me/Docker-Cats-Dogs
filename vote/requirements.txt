@@ -1,2 +1,2 @@
-Flask
-Redis
+Flask==2.3.3
+redis==4.5.5
