@@ -1,5 +1,4 @@
 version: "3.8"
-
 services:
   db:
     image: postgres:latest
@@ -7,79 +6,94 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    deploy:
-      mode: replicated
-      replicas: 1  # Une seule réplique pour la BD principale
-      placement:
-        constraints:
-          - node.role == manager  # Toujours sur le manager pour la consistance
     networks:
       - app-net
+    deploy:
+      placement:
+        constraints:
+          - node.labels.type == manager
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      retries: 5
+    restart: always
 
   redis:
     image: redis:alpine
-    volumes:
-      - redis_data:/data
+    networks:
+      - app-net
     deploy:
-      mode: replicated
-      replicas: 1  # Une seule réplique pour Redis principal
       placement:
         constraints:
-          - node.role == manager  # Toujours sur le manager pour la consistance
-    networks:
-      - app-net
+          - node.labels.type == manager
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 3
+    restart: always
 
   worker:
-    image: voting-worker:latest
+    image: worker:latest
     environment:
       DB_SERVER: db
-      DB_PORT: 5432
       REDIS_HOST: redis
-    deploy:
-      mode: replicated
-      replicas: 2
-      restart_policy:
-        condition: on-failure
     networks:
       - app-net
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.type == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - db
+      - redis
 
   vote:
-    image: voting-vote:latest
+    image: vote:latest
     ports:
-      - "8080:8080"
+      - "5000:80"
     environment:
       REDIS_HOST: redis
+    networks:
+      - app-net
     deploy:
       mode: replicated
       replicas: 2
+      placement:
+        constraints:
+          - node.labels.type == worker
+        max_replicas_per_node: 1
       restart_policy:
         condition: on-failure
-    networks:
-      - app-net
+    depends_on:
+      - redis
 
   result:
-    image: voting-result:latest
+    image: result:latest
     ports:
-      - "8888:8888"
+      - "5001:80"
     environment:
       DB_SERVER: db
-      DB_PORT: 5432
-    deploy:
-      mode: replicated
-      replicas: 2
-      restart_policy:
-        condition: on-failure
+      REDIS_HOST: redis
     networks:
       - app-net
-
-volumes:
-  db_data:
-    driver: local
-  redis_data:
-    driver: local
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.type == worker
+        max_replicas_per_node: 1
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      - db
+      - redis
 
 networks:
   app-net:
-    driver: overlay
+    external: true
