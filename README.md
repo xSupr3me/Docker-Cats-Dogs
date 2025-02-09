@@ -119,3 +119,11 @@ Pour modifier le projet :
 vagrant halt    # Pour mettre en pause
 vagrant destroy -f # Pour supprimer complètement
 ```
+
+## Accès a la base sans SWARM 
+
+Pour acceder a la branche sans swarm :
+```bash
+git clone --branch base-sans-swarm --single-branch https://github.com/xSupr3me/Docker-Cats-Dogs.git
+cd Docker-Cats-Dogs
+```
