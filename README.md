@@ -35,3 +35,10 @@ docker-compose up -d
 - Interface de vote : http://localhost:8080
 - Interface des résultats : http://localhost:8888
 
+## Accès au SWARM 
+
+Pour acceder a la branche swarm :
+```bash
+git clone https://github.com/xSupr3me/Docker-Cats-Dogs.git
+cd Docker-Cats-Dogs
+```
