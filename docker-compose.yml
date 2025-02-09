@@ -25,14 +25,14 @@ services:
   worker:
     image: worker:latest
     environment:
-      DB_SERVER: postgres  # Modifié pour correspondre au nom du service
+      DB_SERVER: postgres
       REDIS_HOST: redis
     networks:
       - app-net
     deploy:
       replicas: 2
       placement:
-        max_replicas_per_node: 1  # Ajouté pour limiter à 1 replica par nœud
+        max_replicas_per_node: 1
         constraints:
           - node.labels.type == worker
     depends_on:
@@ -42,7 +42,7 @@ services:
   vote:
     image: vote:latest
     ports:
-      - "8080:8080"  # Changé de 5000:80 à 8080:8080
+      - "8080:8080"
     environment:
       REDIS_HOST: redis
     networks:
@@ -50,7 +50,7 @@ services:
     deploy:
       replicas: 2
       placement:
-        max_replicas_per_node: 1  # Ajouté pour limiter à 1 replica par nœud
+        max_replicas_per_node: 1 
         constraints:
           - node.labels.type == worker
     depends_on:
@@ -59,7 +59,7 @@ services:
   result:
     image: result:latest
     ports:
-      - "8888:8888"  # Changé de 5001:80 à 8888:8888
+      - "8888:8888"
     environment:
       DB_SERVER: db
       REDIS_HOST: redis
@@ -68,7 +68,7 @@ services:
     deploy:
       replicas: 2
       placement:
-        max_replicas_per_node: 1  # Ajouté pour limiter à 1 replica par nœud
+        max_replicas_per_node: 1 
         constraints:
           - node.labels.type == worker
     depends_on:

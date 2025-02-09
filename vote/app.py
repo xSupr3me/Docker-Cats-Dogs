@@ -16,7 +16,6 @@ app.logger.setLevel(logging.INFO)
 
 def get_redis():
     if not hasattr(Flask, 'redis'):
-        # Utiliser le nom du service comme hostname
         Flask.redis = Redis(host="redis", port=6379, db=0, socket_timeout=5)
     return Flask.redis
 
