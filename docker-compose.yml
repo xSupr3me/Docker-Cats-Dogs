@@ -1,74 +1,80 @@
 services:
   db:
-    image: postgres:17.2-alpine
-    container_name: postgres
-    env_file: .env
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
     networks:
       - app-net
+    deploy:
+      placement:
+        constraints:
+          - node.labels.type == manager
+
 
   redis:
-    image: redis:7.4.2-alpine
-    container_name: redis
-    volumes:
-      - redis_data:/data
+    image: redis:alpine
     networks:
       - app-net
-    depends_on:
-      - db
+    deploy:
+      placement:
+        constraints:
+          - node.labels.type == manager
 
   worker:
-    build:
-      context: ./worker
-      dockerfile: Dockerfile
-    container_name: worker
+    image: worker:latest
     environment:
-      DB_SERVER: db
-      DB_PORT: 5432
+      DB_SERVER: postgres
       REDIS_HOST: redis
     networks:
       - app-net
+    deploy:
+      replicas: 2
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.labels.type == worker
     depends_on:
       - db
+      - redis
 
   vote:
-    build:
-      context: ./vote
-      dockerfile: dockerfile
-    container_name: vote
+    image: vote:latest
     ports:
       - "8080:8080"
     environment:
       REDIS_HOST: redis
     networks:
       - app-net
+    deploy:
+      replicas: 2
+      placement:
+        max_replicas_per_node: 1 
+        constraints:
+          - node.labels.type == worker
     depends_on:
       - redis
 
   result:
-    build:
-      context: ./result
-      dockerfile: Dockerfile
-    container_name: result
+    image: result:latest
     ports:
       - "8888:8888"
     environment:
       DB_SERVER: db
-      DB_PORT: 5432
+      REDIS_HOST: redis
     networks:
       - app-net
+    deploy:
+      replicas: 2
+      placement:
+        max_replicas_per_node: 1 
+        constraints:
+          - node.labels.type == worker
     depends_on:
       - db
-
-volumes:
-  db_data:
-  redis_data:
+      - redis
 
 networks:
   app-net:
+    external: true

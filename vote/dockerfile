@@ -7,7 +7,7 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Installer les dépendances selon requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Copier tout le contenu du dossier vote (y compris src, output, etc.) dans /app
 COPY . .
