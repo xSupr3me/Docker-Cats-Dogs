@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   db:
     image: postgres:latest
@@ -12,11 +11,7 @@ services:
       placement:
         constraints:
           - node.labels.type == manager
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 10s
-      retries: 5
-    restart: always
+
 
   redis:
     image: redis:alpine
@@ -26,28 +21,20 @@ services:
       placement:
         constraints:
           - node.labels.type == manager
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      retries: 3
-    restart: always
 
   worker:
     image: worker:latest
     environment:
-      DB_SERVER: db
+      DB_SERVER: postgres  # Modifié pour correspondre au nom du service
       REDIS_HOST: redis
     networks:
       - app-net
     deploy:
-      mode: replicated
-      replicas: 1
+      replicas: 2
       placement:
+        max_replicas_per_node: 1  # Ajouté pour limiter à 1 replica par nœud
         constraints:
           - node.labels.type == worker
-        max_replicas_per_node: 1
-      restart_policy:
-        condition: on-failure
     depends_on:
       - db
       - redis
@@ -55,41 +42,35 @@ services:
   vote:
     image: vote:latest
     ports:
-      - "5000:80"
+      - "8080:8080"  # Changé de 5000:80 à 8080:8080
     environment:
       REDIS_HOST: redis
     networks:
       - app-net
     deploy:
-      mode: replicated
       replicas: 2
       placement:
+        max_replicas_per_node: 1  # Ajouté pour limiter à 1 replica par nœud
         constraints:
           - node.labels.type == worker
-        max_replicas_per_node: 1
-      restart_policy:
-        condition: on-failure
     depends_on:
       - redis
 
   result:
     image: result:latest
     ports:
-      - "5001:80"
+      - "8888:8888"  # Changé de 5001:80 à 8888:8888
     environment:
       DB_SERVER: db
       REDIS_HOST: redis
     networks:
       - app-net
     deploy:
-      mode: replicated
-      replicas: 1
+      replicas: 2
       placement:
+        max_replicas_per_node: 1  # Ajouté pour limiter à 1 replica par nœud
         constraints:
           - node.labels.type == worker
-        max_replicas_per_node: 1
-      restart_policy:
-        condition: on-failure
     depends_on:
       - db
       - redis

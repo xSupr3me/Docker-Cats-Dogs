@@ -1,80 +1,111 @@
 Vagrant.configure("2") do |config|
-  nodes = [
-    { name: "manager", ip: "192.168.56.100" },
-    { name: "worker1", ip: "192.168.56.101" },
-    { name: "worker2", ip: "192.168.56.102" }
-  ]
+  nodes = {
+    'manager' => '11',
+    'worker1' => '12',
+    'worker2' => '13'
+  }
 
-  # Définir les machines
-  nodes.each do |node|
-    config.vm.define node[:name] do |node_config|
-      node_config.vm.box = "bento/ubuntu-20.04"
-      node_config.vm.provider "vmware_workstation"
-      node_config.vm.network "private_network", ip: node[:ip]
-      node_config.vm.provision "shell", inline: <<-SHELL
-        apt-get update && apt-get install -y docker.io
+  nodes.each do |node_name, ip_end|
+    config.vm.define node_name do |node|
+      node.vm.box = "bento/ubuntu-20.04"
+      node.vm.hostname = node_name
+      node.vm.network "private_network", ip: "192.168.33.#{ip_end}"
+      
+      # Ajouter le forwarding des ports pour le manager
+      if node_name == 'manager'
+        # Forward les ports de l'application
+        node.vm.network "forwarded_port", guest: 8080, host: 8080
+        node.vm.network "forwarded_port", guest: 8888, host: 8888
+      end
+
+      node.vm.provider "vmware_desktop" do |v|
+        v.memory = 2048
+        v.cpus = 2
+      end
+
+      node.vm.provision "shell", inline: <<-SHELL
+        # Installation de Docker
+        apt-get update
+        apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+        add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+        apt-get update
+        apt-get install -y docker-ce docker-ce-cli containerd.io
         usermod -aG docker vagrant
-        curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        chmod +x /usr/local/bin/docker-compose
       SHELL
+
+      # Configuration spécifique pour chaque nœud
+      if node_name == 'manager'
+        node.vm.provision "shell", inline: <<-SHELL
+          # Initialiser le swarm
+          docker swarm init --advertise-addr 192.168.33.11
+          
+          # Sauvegarder le token pour les workers
+          docker swarm join-token worker -q > /vagrant/worker_token
+          
+          # Construction des images personnalisées
+          cd /vagrant
+          docker build -t worker:latest ./worker/
+          docker build -t vote:latest ./vote/
+          docker build -t result:latest ./result/
+          
+          # Créer le réseau overlay
+          docker network create --driver overlay app-net
+          
+          # Sauvegarder le fichier compose
+          cp /vagrant/docker-compose.yml /home/vagrant/docker-compose.yml
+
+          # Créer un script pour configurer les labels et déployer la stack
+          cat > /home/vagrant/deploy.sh <<'EOF'
+#!/bin/bash
+# Attendre que tous les nœuds rejoignent le cluster
+while [ $(docker node ls --format '{{.Hostname}}' | wc -l) -lt 3 ]; do
+  echo "En attente de tous les nœuds..."
+  sleep 5
+done
+
+# Configurer les labels
+docker node update --label-add type=manager manager
+docker node update --label-add type=worker worker1
+docker node update --label-add type=worker worker2
+
+# Déployer la stack
+docker stack deploy -c /home/vagrant/docker-compose.yml myapp
+EOF
+
+          chmod +x /home/vagrant/deploy.sh
+        SHELL
+      elsif node_name.start_with?('worker')
+        node.vm.provision "shell", inline: <<-SHELL
+          # Attendre que le token soit disponible
+          while [ ! -f /vagrant/worker_token ]; do sleep 1; done
+          # Rejoindre le swarm
+          docker swarm join --token $(cat /vagrant/worker_token) 192.168.33.11:2377
+          # Construction des images personnalisées
+          cd /vagrant
+          docker build -t worker:latest ./worker/
+          docker build -t vote:latest ./vote/
+          docker build -t result:latest ./result/
+        SHELL
+      end
+
+      # Configuration finale pour le dernier worker (déploiement des services)
+      if node_name == 'worker2'
+        node.vm.provision "shell", run: "always", inline: <<-SHELL
+          # Attendre que tous les nœuds soient connectés
+          sleep 10
+          
+          # Exécuter le script de déploiement sur le manager
+          ssh -i /vagrant/.vagrant/machines/manager/vmware_desktop/private_key \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              vagrant@192.168.33.11 \
+              "bash /home/vagrant/deploy.sh"
+          
+          # Nettoyer le fichier de token
+          rm -f /vagrant/worker_token
+        SHELL
+      end
     end
-  end
-
-  # Initialisation du Swarm sur le manager
-  config.vm.define "manager" do |manager_config|
-    manager_config.vm.provision "shell", inline: <<-SHELL
-      # Initialiser Docker Swarm
-      docker swarm init --advertise-addr 192.168.56.100
-      docker swarm join-token worker -q > /vagrant/worker_token
-
-      # Construire et sauvegarder les images
-      docker build -t result:latest /vagrant/result
-      docker build -t vote:latest /vagrant/vote
-      docker build -t worker:latest /vagrant/worker
-      docker save -o /vagrant/result.tar result:latest
-      docker save -o /vagrant/vote.tar vote:latest
-      docker save -o /vagrant/worker.tar worker:latest
-    SHELL
-  end
-
-  # Provisionnement des workers
-  nodes.drop(1).each do |worker|
-    config.vm.define worker[:name] do |worker_config|
-      worker_config.vm.provision "shell", inline: <<-SHELL
-        # Rejoindre le Swarm du manager
-        docker swarm join --token $(cat /vagrant/worker_token) 192.168.56.100:2377
-
-        # Charger les images sur les workers
-        docker load -i /vagrant/result.tar
-        docker load -i /vagrant/vote.tar
-        docker load -i /vagrant/worker.tar
-      SHELL
-    end
-  end
-
-  # Provisionnement final sur le manager
-  config.vm.define "manager" do |manager_config|
-    manager_config.vm.provision "shell", inline: <<-SHELL
-      sleep 30  # Attendre que les workers rejoignent
-
-      # S'assurer que les nœuds sont disponibles
-      until docker node ls | grep -q "worker2"; do
-        sleep 5
-      done
-
-      # Mettre à jour les labels des nœuds
-      docker node update --label-add type=worker worker1
-      docker node update --label-add type=worker worker2
-      docker node update --label-add type=manager manager
-
-      # Créer le réseau overlay
-      docker network create --driver overlay app-net || true
-
-      # Déployer la stack
-      docker stack deploy -c /vagrant/docker-compose.yml app
-
-      # Vérifier le déploiement
-      docker stack ps app
-    SHELL
   end
 end
