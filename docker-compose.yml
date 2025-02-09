@@ -1,26 +1,37 @@
 services:
   db:
-    image: postgres:latest
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+    image: postgres:17.2-alpine
+    env_file: .env
+    volumes:
+      - db_data:/var/lib/postgresql/data
     networks:
-      - app-net
+      - backend-net
     deploy:
       placement:
         constraints:
           - node.labels.type == manager
-
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
-    image: redis:alpine
+    image: redis:7.4.2-alpine
     networks:
-      - app-net
+      - backend-net
+      - middleware-net
+    volumes:
+      - redis_data:/data
     deploy:
       placement:
         constraints:
           - node.labels.type == manager
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   worker:
     image: worker:latest
@@ -28,7 +39,7 @@ services:
       DB_SERVER: postgres  # Modifié pour correspondre au nom du service
       REDIS_HOST: redis
     networks:
-      - app-net
+      - backend-net
     deploy:
       replicas: 2
       placement:
@@ -38,6 +49,11 @@ services:
     depends_on:
       - db
       - redis
+    healthcheck:
+      test: ["CMD", "pgrep", "python"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   vote:
     image: vote:latest
@@ -46,7 +62,8 @@ services:
     environment:
       REDIS_HOST: redis
     networks:
-      - app-net
+      - frontend-net
+      - middleware-net
     deploy:
       replicas: 2
       placement:
@@ -55,6 +72,11 @@ services:
           - node.labels.type == worker
     depends_on:
       - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   result:
     image: result:latest
@@ -64,7 +86,8 @@ services:
       DB_SERVER: db
       REDIS_HOST: redis
     networks:
-      - app-net
+      - frontend-net
+      - middleware-net
     deploy:
       replicas: 2
       placement:
@@ -74,7 +97,24 @@ services:
     depends_on:
       - db
       - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 networks:
-  app-net:
-    external: true
+  frontend-net:
+    driver: overlay
+    driver_opts:
+      encrypted: "true"
+  backend-net:
+    driver: overlay
+    driver_opts:
+      encrypted: "true"
+    internal: true  # Pas d'accès externe
+  middleware-net:
+    driver: overlay
+    driver_opts:
+      encrypted: "true"
+    internal: true  # Pas d'accès externe
